@@ -1,0 +1,2 @@
+Crear un arbol que almacene la jerarquia de cada estado, por ejemplo la jerarquia de una funcion es almacenar la funcion principal, 
+luego crear mas nodos por si la funcion tiene mas funciones. 
