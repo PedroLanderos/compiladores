@@ -18,8 +18,8 @@ y su correcta asignacion de tipo de dato
 funciones o variables con alguno de esos valores.
 
 6. Arreglo del bug de la declaracion/asignacion de variables que permitia declaraciones de tipo = int int; int float; int char;
-
 */
+
 #include <iostream>
 #include <regex>
 #include <fstream>
@@ -172,6 +172,7 @@ void CheckVariables(unordered_map<string, pair<string, int>> variables, string v
     } 
 }
 
+//Obtener el tipo de variable.
 string GetVarType(unordered_map<string, pair<string, int>> variables, string var)
 {
     for(const auto &pair : variables)
@@ -196,6 +197,7 @@ void AddGlobalFunctions(string name, string returnType)
     functions[name].second++;
 }
 
+//Obtener el tipo de retorno de la funcion
 string GetFunctionType(string var)
 {
     for(const auto &pair : functions)
@@ -644,134 +646,93 @@ void CheckNode(Node &nodo, Node &root)
             }
         }
 
+        //procesar llamadas a funciones
         if (!matched && regex_search(code, match, regex(families["CALL"])))
         {
             if (match.position() == 0)
             {
                 tokens = SetTokens(match.str());
 
-                //revisa que tipo de llamado es
-                if(tokens[0].second == "N") //tipo 1
+                string functionName;
+                string varType;
+                bool isAssignment = false;
+
+                if (tokens[0].second == "N") // tipo 1: Func(a, b);
                 {
-                    //tipo 1: Func(a, b);
-                    //busca el nodo en el que NombreDeFuncion sea igual al nombre de la funcion
-                    //obten el tipo de dato que se este pasando a la funcion y guardalo en un vector
-                    //compara el vector que acabas de crear con el tipo de dato con el vector tiposDeParametros y si alguno no concide termina el programa
-                    Node *functionNode = nullptr;
-                    for(const auto &child : root.hijos)
-                    {
-                        if(child->nombreDeFuncion == tokens[0].first)
-                        {
-                            functionNode = child.get();
-                            break;
-                        }
-                    }
-
-                    string funcType = GetFunctionType(tokens[0].first);
-
-                    if(funcType != "void")
-                    {
-                        cout<<"Mala asignacion"<<endl;
-                        exit(1);
-                    }
-
-                    vector<string> localVarTypes;
-                    //obtener las variables que esten dentro de los parentesis
-                    size_t startParams = match.str().find('(');
-                    size_t endParams = match.str().find(')');
-                    string parameters = match.str().substr(startParams + 1, endParams - startParams - 1);
-                    vector<pair<string, string>> paramParsedTokens = SetTokens(parameters);
-
-                    for (const auto &paramToken : paramParsedTokens)
-                    {
-                        if (paramToken.second == "N")
-                        {
-                            CheckVariables(nodo.variables, paramToken.first); // Verificar si la variable existe
-                            localVarTypes.push_back(GetVarType(nodo.variables, paramToken.first)); // Obtener el tipo
-                        }
-                    }
-
-                    if(localVarTypes.size() != functionNode->tiposDeParametos->size())
-                    {
-                        cout<<"Cantidad incorrecta de parametros introducidos en la funcion: "<<functionNode->nombreDeFuncion<<endl;
-                        exit(1);
-                    }
-
-                    for(int i = 0; i < localVarTypes.size(); i++)
-                    {
-                        if(localVarTypes[i] != (*functionNode->tiposDeParametos)[i])
-                        {
-                            cout<<"Tipo de dato incorrecto en la llamada a la funcion"<<endl;
-                            exit(1);
-                        }
-                    }
-
+                    functionName = tokens[0].first;
                 }
-                else //tipo 2
+                else if (tokens[3].second == "N") // tipo 2: int var = Func(a, b);
                 {
-                    Node *functionNode = nullptr;
-                    for(const auto &child : root.hijos)
-                    {
-                        if(child->nombreDeFuncion == tokens[3].first)
-                        {
-                            functionNode = child.get();
-                            break;
-                        }
-                    }
-                    string funcType = GetFunctionType(tokens[3].first);
-
-                    if(funcType == "void")
-                    {
-                        cout<<"Mala asignacion"<<endl;
-                        exit(1);
-                    }
-
-                    vector<string> localVarTypes;
-                    //obtener las variables que esten dentro de los parentesis
-                    size_t startParams = match.str().find('(');
-                    size_t endParams = match.str().find(')');
-                    string parameters = match.str().substr(startParams + 1, endParams - startParams - 1);
-                    vector<pair<string, string>> paramParsedTokens = SetTokens(parameters);
-
-                    for (const auto &paramToken : paramParsedTokens)
-                    {
-                        if (paramToken.second == "N")
-                        {
-                            CheckVariables(nodo.variables, paramToken.first); // Verificar si la variable existe
-                            localVarTypes.push_back(GetVarType(nodo.variables, paramToken.first)); // Obtener el tipo
-                        }
-                    }
-
-                    if(localVarTypes.size() != functionNode->tiposDeParametos->size())
-                    {
-                        cout<<"Cantidad incorrecta de parametros introducidos en la funcion: "<<functionNode->nombreDeFuncion<<endl;
-                        exit(1);
-                    }
-
-                    for(int i = 0; i < localVarTypes.size(); i++)
-                    {
-                        if(localVarTypes[i] != (*functionNode->tiposDeParametos)[i])
-                        {
-                            cout<<"Tipo de dato incorrecto en la llamada a la funcion"<<endl;
-                            exit(1);
-                        }
-                    }
-
-                    //verifcar si la asignacion fue correcta
-                    string varType = tokens[0].first;
-                    if(varType != funcType)
-                    {
-                        cout<<"Tipo de asignacion de funcion a variable incorrecta"<<endl;
-                        exit(1);
-                    }
+                    functionName = tokens[3].first;
+                    varType = tokens[0].first;
+                    isAssignment = true;
                 }
+                else
+                {
+                    cout << "Error en la llamada a la funcion." << endl;
+                    exit(1);
+                }
+
                 
-                //tipo 2: int v = func();
-                //busca el nombre func en el map de funciones para identificar el tipo de retorno
-                //compara el tipo de variable al que se esta declarando y si no son iguales termina el programa
-                //si son iguales, busca el nodo en el que NombreDeFuncion sea igual al nombre de la funcion
-                //obten el tipo de dato que se este pasando a la funcion y guardalo en un vector
-                //compara el vector que acabas de crear con el tipo de dato con el vector tiposDeParametros y si alguno no concide termina el programa
+
+                Node *functionNode = nullptr;
+                for (const auto &child : root.hijos)
+                {
+                    if (child->nombreDeFuncion == functionName)
+                    {
+                        functionNode = child.get();
+                        break;
+                    }
+                }
+
+                string funcType = GetFunctionType(functionName);
+                if (isAssignment && funcType == "void")
+                {
+                    cout << "No se puede asignar el retorno de una funcion void." << endl;
+                    exit(1);
+                }
+
+                if (!isAssignment && funcType != "void")
+                {
+                    cout << "Llamada a funcion con tipo de retorno sin asignacion: " << functionName << endl;
+                    exit(1);
+                }
+
+                size_t startParams = match.str().find('(');
+                size_t endParams = match.str().find(')');
+                string parameters = match.str().substr(startParams + 1, endParams - startParams - 1);
+                vector<pair<string, string>> paramParsedTokens = SetTokens(parameters);
+
+                vector<string> localVarTypes;
+                for (const auto &paramToken : paramParsedTokens)
+                {
+                    if (paramToken.second == "N")
+                    {
+                        CheckVariables(nodo.variables, paramToken.first); // Verificar si la variable existe
+                        localVarTypes.push_back(GetVarType(nodo.variables, paramToken.first)); // Obtener el tipo
+                    }
+                }
+
+                if (!functionNode->tiposDeParametos || localVarTypes.size() != functionNode->tiposDeParametos->size())
+                {
+                    cout << "Cantidad incorrecta de parametros introducidos en la funcion: " << functionName << endl;
+                    exit(1);
+                }
+
+                for (int i = 0; i < localVarTypes.size(); i++)
+                {
+                    if (localVarTypes[i] != (*functionNode->tiposDeParametos)[i])
+                    {
+                        cout << "Tipo de dato incorrecto en el parametro " << i + 1 << " de la funcion '" << functionName << "'." << endl;
+                        exit(1);
+                    }
+                }
+
+                if (isAssignment && varType != funcType)
+                {
+                    cout << "Tipo de asginacion de función a variable incorrecta." << endl;
+                    exit(1);
+                }
 
                 code = match.suffix().str();
                 matched = true;
