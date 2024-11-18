@@ -1,16 +1,11 @@
-int a = 0;
-float f;
-
-int suma(int var1, int a)
+float suma(float a, float b)
 {
-    int i, suma = 0;
-    for(i = 0; i < 10; i++)
-    {
-        suma = var1 + a + i;
-    }
-} 
+    float suma = a + b;
+    return suma;
+}
 
-void resta(int var1, int a)
+int main()
 {
-    int resta = var1 - a;
+    int a, b, c;
+    float sum = suma(a, b);
 }

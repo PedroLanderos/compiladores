@@ -2,13 +2,22 @@
 //compilador v10
 /*
 Cambios:
-1. Actualizacion la estructura nodo para que las variables contengan su tipo de dato.
-1.1 Actualizacion de las funciones que utilizan el map de variables de los nodos.
+1. Actualizacion de la estructura Nodo para permitir conservar las referencias y el nombre de una funcion
+1.1 Actualizacion del metodo CreateASTTree para guardar los tipos de datos de los parametros de una funcion
+1.2 Actualizacion del metofo CreateASTTree para guardar el nombre de la funcion en el nodo 
 
-2. Actualizacion del map de funciones para que contenga el tipo de retorno. 
-2.1 Actualizacion de las funciones que utilizan el map de funciones
+2. Validaciones de tipos de datos en asignaciones de variables por referencia.
 
-3. Actualizacion para la verificacion de los parentesis de un bucle for, while y condicionales if.
+3. Implementacion en metodo que crea el arbol AST para la deteccion de la palabra reservada "return" 
+y su correcta asignacion de tipo de dato
+
+4. Creacion de expresion regular para la deteccion de llamadas a funciones
+4.1 Validacion de numero de parametros a funciones y sus tipos de datos
+
+5. Creacion de vector global que contiene las palabras reservadas y no permite un nombramiento de 
+funciones o variables con alguno de esos valores.
+
+6. Arreglo del bug de la declaracion/asignacion de variables que permitia declaraciones de tipo = int int; int float; int char;
 
 */
 #include <iostream>
@@ -27,12 +36,14 @@ using namespace std;
 //Estructura base del nodo
 struct Node 
 {
+    string nombreDeFuncion;
     string familia;
     string body;
     unordered_map<string, pair<string, int>> variables;
     vector<unique_ptr<Node>> hijos;
+    unique_ptr<vector<string>> tiposDeParametos;
 
-    Node(const string& f, const string& b, const unordered_map<string, pair<string, int>>& v) : familia(f), body(b), variables(v){}
+    Node(const string& f, const string& b,  const unordered_map<string, pair<string, int>>& v, const string &n) : familia(f), body(b), variables(v), nombreDeFuncion(n){}
 
     void AddNode(unique_ptr<Node> hijo) {
         hijos.push_back(move(hijo));
@@ -54,11 +65,27 @@ map<string, string> families = {
     {"FOR", R"(^\s*for\s*\(\s*[^)]*\s*\)\s*\{)"},                       // for
     {"WHILE", R"(^\s*while\s*\(\s*[^)]*\s*\)\s*\{)"},                   // while
     {"VA", R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+)\s*;)"},        // asignación de variables
+    {"R", R"(^\s*return\s+([^;]+)\s*;)"},
+    {"CALL", R"(^\s*(\b\w+\s+\w+\s*=\s*)?\b\w+\s*\([^;]*\)\s*;)"},
     {"V", R"(^\s*(int|float|double|char)\s+([a-zA-Z_][a-zA-Z0-9_]*)(\s*=\s*[^,;]*)?(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=\s*[^,;]*)?)*\s*;)"}
 };
 
 //Map que contiene a las funciones, sus tipos de datos y tipo de retorno.
 unordered_map<string, pair<string, int>> functions;
+
+vector<string> reservedWords = {
+        "int", "float", "char", "return", "while", "for", "if", "main"
+    };
+
+void CheckReservedWords(string var)
+{
+    auto it = find(reservedWords.begin(), reservedWords.end(), var);
+    if(it != reservedWords.end())
+    {
+        cout<<"No se puede nombrar algo con una palabra reservada"<<endl;
+        exit(1);
+    }
+}
 
 //Funcion para separar un string en palabras.
 queue<string> SeparateText(string texto)
@@ -112,7 +139,7 @@ vector<pair<string, string>> SetTokens(string text)
         {
             regex reg(pair.second);
             if (regex_match(front, reg))
-            {
+            {   
                 tokens.emplace_back(front, pair.first);
                 break;
             }
@@ -127,11 +154,6 @@ void CheckVariables(unordered_map<string, pair<string, int>> variables)
 {
     for(const auto &pair : variables)
     {
-        if(pair.first == "for" || pair.first == "void" || pair.first == "int" || pair.first == "while" || pair.first == "if")
-        {
-            cout<<"Palabra reservada"<<endl;
-            exit(1);
-        }
         if(pair.second.second > 1){
             cout<<"variable mal declarada o repetida: "<<pair.first<<endl;
             exit(1);
@@ -150,6 +172,17 @@ void CheckVariables(unordered_map<string, pair<string, int>> variables, string v
     } 
 }
 
+string GetVarType(unordered_map<string, pair<string, int>> variables, string var)
+{
+    for(const auto &pair : variables)
+    {
+        if(pair.first == var)
+            return pair.second.first;
+    }
+
+    return "";
+}
+
 //Agregar la informacion de la funcion al map que contiene los esqueletos de funciones.
 void AddGlobalFunctions(string name, string returnType)
 {
@@ -161,6 +194,41 @@ void AddGlobalFunctions(string name, string returnType)
     } 
     functions[name].first = returnType;
     functions[name].second++;
+}
+
+string GetFunctionType(string var)
+{
+    for(const auto &pair : functions)
+    {
+        if(pair.first == var)
+            return pair.second.first;
+    }
+
+    return "";
+}
+
+//Revisa si las condiciones son correctas
+void ValidateCondition(const string& condition) 
+{
+    regex validConditionRegex(R"((\d+|\w+)\s*(==|>=|<=|>|<)\s*(\d+|\w+)(\s*(&&|\|\|)\s*(\d+|\w+)\s*(==|>=|<=|>|<)\s*(\d+|\w+))*)");
+    smatch match;
+    if (!regex_match(condition, match, validConditionRegex)) 
+    {
+        cout<<"Condicion invalida"<<endl;
+        exit(1);
+    }
+}
+
+void ValidateFor(const string& condition)
+{
+    regex validFor(R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(-?\d+)\s*;\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(<=|>=|<|>|==)\s*(-?\d+)\s*;\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(\+\+|--)\s*$)");
+    smatch match;
+
+    if(!regex_match(condition, match, validFor))
+    {
+        cout<<"Condicion invalida"<<endl;
+        exit(1);
+    }
 }
 
 //Separar el codigo en funciones. Guardar las variables globales al nodo root.
@@ -183,14 +251,26 @@ void CreateASTTree(Node &root, string &code)
             if (match.position() == 0)  
             {
                 string tipo = "";
+                bool declaration = false;
                 tokens = SetTokens(match.str());
                 for (const auto& par : tokens) 
                 {
-                    if(par.second == "D")
+                    if(declaration && par.second == "D")
+                    {
+                        cout<<"Variable mal declara (doble tipo de dato)"<<endl;
+                        exit(1);
+                    }
+                    if(par.second == "D" && !declaration)
+                    {
                         tipo = par.first;
-                        
-                    if (par.second == "N") 
+                        declaration = true;
+                    }      
+                    if (par.second == "N")
+                    {
+                        CheckReservedWords(par.first);
                         root.variables[par.first] = {tipo, root.variables[par.first].second + 1};
+                    } 
+                        
                 }
                 CheckVariables(root.variables);
                 code = match.suffix().str();
@@ -205,7 +285,7 @@ void CreateASTTree(Node &root, string &code)
             {
                 tokens = SetTokens(match.str());
                 AddGlobalFunctions(tokens[1].first, tokens[0].first);  
-                auto functionNode = make_unique<Node>("function", "", root.variables);
+                auto functionNode = make_unique<Node>("function", "", root.variables, tokens[1].first);
 
                 //revisar parametros de la funcion
                 string functionSignature = match.str();
@@ -224,14 +304,28 @@ void CreateASTTree(Node &root, string &code)
                             string varName = paramParsedTokens[i + 1].first;  
                             string varType = paramParsedTokens[i].first;
 
-                            functionNode->variables[varName] = {varType, functionNode->variables[varName].second + 1};
+                            // Agregar el parámetro al mapa de variables de la función
+                            functionNode->variables[varName] = {varType, 1}; 
 
+                            if (!functionNode->tiposDeParametos) 
+                                functionNode->tiposDeParametos = make_unique<vector<string>>();
+
+                            functionNode->tiposDeParametos->push_back(varType);
+                            i++; // Avanzar al siguiente par de tokens (tipo y nombre)
                         }
-                        CheckVariables(functionNode->variables);
-                        i++;
+                        else if (paramParsedTokens[i].second == "C")
+                        {
+                            // Ignorar comas, ya que solo separan los parámetros
+                            continue;
+                        }
+                        else
+                        {
+                            cout << "Error en la definición de parámetros de la función." << endl;
+                            exit(1);
+                        }
                     }
-                    
                 }
+
 
                 int braceCount = 1;
                 size_t pos = match.position(0) + match.length(0);
@@ -280,32 +374,8 @@ void CreateASTTree(Node &root, string &code)
     }
 }
 
-//Revisa si las condiciones son correctas
-void ValidateCondition(const string& condition) 
-{
-    regex validConditionRegex(R"((\d+|\w+)\s*(==|>=|<=|>|<)\s*(\d+|\w+)(\s*(&&|\|\|)\s*(\d+|\w+)\s*(==|>=|<=|>|<)\s*(\d+|\w+))*)");
-    smatch match;
-    if (!regex_match(condition, match, validConditionRegex)) 
-    {
-        cout<<"Condicion invalida"<<endl;
-        exit(1);
-    }
-}
-
-void ValidateFor(const string& condition)
-{
-    regex validFor(R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(-?\d+)\s*;\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(<=|>=|<|>|==)\s*(-?\d+)\s*;\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(\+\+|--)\s*$)");
-    smatch match;
-
-    if(!regex_match(condition, match, validFor))
-    {
-        cout<<"Condicion invalida"<<endl;
-        exit(1);
-    }
-}
-
 //Revisar recurisvamente las funciones para encontrar bucles, condicionales y declaraciones de variables.
-void CheckNode(Node &nodo)
+void CheckNode(Node &nodo, Node &root)
 {
     smatch match;
     vector<pair<string, string>> tokens;
@@ -327,7 +397,7 @@ void CheckNode(Node &nodo)
             if (match.position() == 0)
             {
                 tokens = SetTokens(match.str());
-                auto ifNode = make_unique<Node>("if", "", nodo.variables);
+                auto ifNode = make_unique<Node>("if", "", nodo.variables, nodo.nombreDeFuncion);
 
                 // Revisar condición del if
                 string ifSignature = match.str();
@@ -370,7 +440,7 @@ void CheckNode(Node &nodo)
                 string bodyContent = code.substr(match.position(0) + match.length(0), pos - (match.position(0) + match.length(0)) - 1);
                 ifNode->body = bodyContent;
 
-                CheckNode(*ifNode);
+                CheckNode(*ifNode, root);
 
                 nodo.AddNode(move(ifNode));
 
@@ -388,7 +458,7 @@ void CheckNode(Node &nodo)
                 string matchedStr = match.str();
 
                 tokens = SetTokens(match.str());
-                auto loopNode = make_unique<Node>("loop", "", nodo.variables);   
+                auto loopNode = make_unique<Node>("loop", "", nodo.variables, nodo.nombreDeFuncion);   
 
                 //revisar los parentesis del bucle
                 string loopSignature = match.str();
@@ -447,7 +517,7 @@ void CheckNode(Node &nodo)
                 string bodyContent = code.substr(match.position(0) + match.length(0), pos - (match.position(0) + match.length(0)) - 1);
                 loopNode->body = bodyContent;
 
-                CheckNode(*loopNode);
+                CheckNode(*loopNode, root);
 
                 nodo.AddNode(move(loopNode));
 
@@ -455,23 +525,32 @@ void CheckNode(Node &nodo)
                 matched = true;
                 continue;
             }
-        }
-
-
-        
+        }        
         // Procesar declaraciones de variables locales
         if (!matched && regex_search(code, match, regex(families["V"])))
         {
+            string asignationDataType = "";
             if (match.position() == 0)
             {
                 string tipo = "";
                 tokens = SetTokens(match.str());
                 string anterior = "";
                 string actual = "";
+
+                bool declaration = false;
                 for (const auto& par : tokens) 
                 {
-                    if(par.second == "D")
+                    if(declaration && par.second == "D")
+                    {
+                        cout<<"Variable mal declara (doble tipo de dato)"<<endl;
+                        exit(1);
+                    }
+                    if(par.second == "D" && !declaration)
+                    {
                         tipo = par.first;
+                        declaration = true;
+                    }
+                        
                     actual = par.second;
                     //solo se deberia de guardar si estra atras de una coma o atras de un tipo de dato
                     if (par.second == "N" && (anterior == "C" || anterior == "D" )) 
@@ -481,9 +560,21 @@ void CheckNode(Node &nodo)
                                            : make_pair(tipo, 1);  
                     }
 
+                    //int suma = a + b
                     if(par.second == "N")
+                    {
+                        CheckReservedWords(par.first);
                         CheckVariables(nodo.variables, par.first);
-
+                        string dataType = GetVarType(nodo.variables, par.first);
+                        //
+                        if(dataType != asignationDataType && asignationDataType != "")
+                        {
+                            cout<<"Asignacion de datos incorrecta en "<<par.first << endl;
+                            exit(1);
+                        }
+                        asignationDataType = dataType;
+                    }
+                        
                     anterior = actual;
                 }
                 CheckVariables(nodo.variables);
@@ -492,17 +583,38 @@ void CheckNode(Node &nodo)
                 continue;
             }
         }
-
         // Procesar asignaciones de variables
         if (!matched && regex_search(code, match, regex(families["VA"])))
         {
             if (match.position() == 0)
             {
+                string asignationDataType = "";
                 tokens = SetTokens(match.str());
                 for (const auto& par : tokens) 
                 {
-                    if (par.second == "N") 
+                    if(par.second == "D")
+                    {
+                        cout<<"Error en la asignacion de valores (doble tipo de dato)"<<endl;
+                        exit(1);
+                    }
+
+                    if (par.second == "N")
+                    {
+                        CheckReservedWords(par.first);
                         CheckVariables(nodo.variables, par.first);
+                        //referenciar el primer tipo de valor
+                        //asignationDataType = datatype jeje
+                        //string = dataType y el datatype se busca en el map de variables
+                        string dataType = GetVarType(nodo.variables, par.first);
+                        //
+                        if(dataType != asignationDataType && asignationDataType != "")
+                        {
+                            cout<<"Asignacion de datos incorrecta en "<<par.first << endl;
+                            exit(1);
+                        }
+                        asignationDataType = dataType;
+                    } 
+                        
                 }
                 code = match.suffix().str();
                 matched = true;
@@ -510,6 +622,162 @@ void CheckNode(Node &nodo)
             }
         }
 
+        //procesar returns
+        if (!matched && regex_search(code, match, regex(families["R"])))
+        {
+            if (match.position() == 0)
+            {
+                string returnVar = match[1];
+                //get the var type
+                string varType = GetVarType(nodo.variables, returnVar);
+                //get the function type
+                string funcType = GetFunctionType(nodo.nombreDeFuncion);
+                //comparar si son iguales
+                if(varType != funcType)
+                {
+                    cout<<"Valor del return "<<returnVar<<" es invalido"<<endl;
+                    exit(1);
+                }
+                code = match.suffix().str();
+                matched = true;
+                continue;
+            }
+        }
+
+        if (!matched && regex_search(code, match, regex(families["CALL"])))
+        {
+            if (match.position() == 0)
+            {
+                tokens = SetTokens(match.str());
+
+                //revisa que tipo de llamado es
+                if(tokens[0].second == "N") //tipo 1
+                {
+                    //tipo 1: Func(a, b);
+                    //busca el nodo en el que NombreDeFuncion sea igual al nombre de la funcion
+                    //obten el tipo de dato que se este pasando a la funcion y guardalo en un vector
+                    //compara el vector que acabas de crear con el tipo de dato con el vector tiposDeParametros y si alguno no concide termina el programa
+                    Node *functionNode = nullptr;
+                    for(const auto &child : root.hijos)
+                    {
+                        if(child->nombreDeFuncion == tokens[0].first)
+                        {
+                            functionNode = child.get();
+                            break;
+                        }
+                    }
+
+                    string funcType = GetFunctionType(tokens[0].first);
+
+                    if(funcType != "void")
+                    {
+                        cout<<"Mala asignacion"<<endl;
+                        exit(1);
+                    }
+
+                    vector<string> localVarTypes;
+                    //obtener las variables que esten dentro de los parentesis
+                    size_t startParams = match.str().find('(');
+                    size_t endParams = match.str().find(')');
+                    string parameters = match.str().substr(startParams + 1, endParams - startParams - 1);
+                    vector<pair<string, string>> paramParsedTokens = SetTokens(parameters);
+
+                    for (const auto &paramToken : paramParsedTokens)
+                    {
+                        if (paramToken.second == "N")
+                        {
+                            CheckVariables(nodo.variables, paramToken.first); // Verificar si la variable existe
+                            localVarTypes.push_back(GetVarType(nodo.variables, paramToken.first)); // Obtener el tipo
+                        }
+                    }
+
+                    if(localVarTypes.size() != functionNode->tiposDeParametos->size())
+                    {
+                        cout<<"Cantidad incorrecta de parametros introducidos en la funcion: "<<functionNode->nombreDeFuncion<<endl;
+                        exit(1);
+                    }
+
+                    for(int i = 0; i < localVarTypes.size(); i++)
+                    {
+                        if(localVarTypes[i] != (*functionNode->tiposDeParametos)[i])
+                        {
+                            cout<<"Tipo de dato incorrecto en la llamada a la funcion"<<endl;
+                            exit(1);
+                        }
+                    }
+
+                }
+                else //tipo 2
+                {
+                    Node *functionNode = nullptr;
+                    for(const auto &child : root.hijos)
+                    {
+                        if(child->nombreDeFuncion == tokens[3].first)
+                        {
+                            functionNode = child.get();
+                            break;
+                        }
+                    }
+                    string funcType = GetFunctionType(tokens[3].first);
+
+                    if(funcType == "void")
+                    {
+                        cout<<"Mala asignacion"<<endl;
+                        exit(1);
+                    }
+
+                    vector<string> localVarTypes;
+                    //obtener las variables que esten dentro de los parentesis
+                    size_t startParams = match.str().find('(');
+                    size_t endParams = match.str().find(')');
+                    string parameters = match.str().substr(startParams + 1, endParams - startParams - 1);
+                    vector<pair<string, string>> paramParsedTokens = SetTokens(parameters);
+
+                    for (const auto &paramToken : paramParsedTokens)
+                    {
+                        if (paramToken.second == "N")
+                        {
+                            CheckVariables(nodo.variables, paramToken.first); // Verificar si la variable existe
+                            localVarTypes.push_back(GetVarType(nodo.variables, paramToken.first)); // Obtener el tipo
+                        }
+                    }
+
+                    if(localVarTypes.size() != functionNode->tiposDeParametos->size())
+                    {
+                        cout<<"Cantidad incorrecta de parametros introducidos en la funcion: "<<functionNode->nombreDeFuncion<<endl;
+                        exit(1);
+                    }
+
+                    for(int i = 0; i < localVarTypes.size(); i++)
+                    {
+                        if(localVarTypes[i] != (*functionNode->tiposDeParametos)[i])
+                        {
+                            cout<<"Tipo de dato incorrecto en la llamada a la funcion"<<endl;
+                            exit(1);
+                        }
+                    }
+
+                    //verifcar si la asignacion fue correcta
+                    string varType = tokens[0].first;
+                    if(varType != funcType)
+                    {
+                        cout<<"Tipo de asignacion de funcion a variable incorrecta"<<endl;
+                        exit(1);
+                    }
+                }
+                
+                //tipo 2: int v = func();
+                //busca el nombre func en el map de funciones para identificar el tipo de retorno
+                //compara el tipo de variable al que se esta declarando y si no son iguales termina el programa
+                //si son iguales, busca el nodo en el que NombreDeFuncion sea igual al nombre de la funcion
+                //obten el tipo de dato que se este pasando a la funcion y guardalo en un vector
+                //compara el vector que acabas de crear con el tipo de dato con el vector tiposDeParametros y si alguno no concide termina el programa
+
+                code = match.suffix().str();
+                matched = true;
+                continue;
+            }
+        }
         // Si no se pudo procesar nada y el código no está vacío, reportar error
         if (!matched)
         {
@@ -517,6 +785,7 @@ void CheckNode(Node &nodo)
             {
                 cout << "Codigo incorrecto en el nodo " << nodo.familia << ": " << code << endl;
                 exit(1);
+                
             }
         }
     }
@@ -556,7 +825,7 @@ void PrintChildren(const Node& root) {
 
 //Inicializar el nodo root vacio. 
 unique_ptr<Node> InitiTree() {
-    return make_unique<Node>("root", "", unordered_map<string, pair<string, int>>());
+    return make_unique<Node>("root", "", unordered_map<string, pair<string, int>>(), "");
 }
 
 //Funcion principal del programa que contiene los arboles y el codigo a revisar.
@@ -583,7 +852,7 @@ int main(int argc, char const *argv[])
 
     cout << "Verificando nodos hijos:" << endl;
     for (const auto& child : root->hijos) {
-        CheckNode(*child);
+        CheckNode(*child, *root);
         PrintChildren(*child);
     }
 
