@@ -60,7 +60,7 @@ map<string, string> families = {
     {"FOR", R"(^\s*for\s*\(\s*[^)]*\s*\)\s*\{)"},                       // for
     {"WHILE", R"(^\s*while\s*\(\s*[^)]*\s*\)\s*\{)"},                   // while
     {"VA", R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+)\s*;)"},        // asignación de variables
-    {"R", R"(^\s*return\s+([^;]+)\s*;)"},
+    {"R", R"(\s*return\s+([a-zA-Z_]\w*|\d+|'[a-zA-Z]'|\d+\.\d+)\s*;)"},
     {"CALL", R"(^\s*(\b\w+\s+\w+\s*=\s*)?\b\w+\s*\([^;]*\)\s*;)"},
     {"V", R"(^\s*(int|float|double|char)\s+([a-zA-Z_][a-zA-Z0-9_]*)(\s*=\s*'([a-zA-Z])'|\s*=\s*[^,;]*)?(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=\s*'([a-zA-Z])'|\s*=\s*[^,;]*)?)*\s*;)"}
 };
@@ -455,8 +455,17 @@ void CreateASTTree(Node &root, string &code)
                 }
 
                 string bodyContent = code.substr(match.position(0) + match.length(0), pos - (match.position(0) + match.length(0)) - 1);
-
                 functionNode->body = bodyContent;
+                string functType = GetFunctionType(functionNode->nombreDeFuncion);
+                smatch returnMatch;
+                if (!regex_search(functionNode->body, returnMatch, regex(families["R"]))) {
+                    if (functType != "void")                    
+                    {
+                        cout<<"Funcion "<<functionNode->nombreDeFuncion<<" distinta de void sin un return"<<endl;
+                        cout<<"cuerpo de la funcion: "<<functionNode->body<<endl;
+                        exit(1);
+                    }
+                }
                 root.AddNode(move(functionNode));
                 code = code.substr(pos);
                 matched = true;

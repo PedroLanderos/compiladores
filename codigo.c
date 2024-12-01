@@ -1,17 +1,23 @@
-char pepe2 = 'a';
-
-int suma(int a, int b, char c, double pepeeeee)
+int suma()
 {
-    int s = a + b;
-    return s;
+    int s = 20 + 20;
+    int a;
+
+    if(a == 20)
+    {
+        if(s == 20)
+        {
+            return s;
+        }
+    }
+    return a;
 }
+
 
 int main()
 {
-    int a, b;
-    a = b;
-    char c;
-    double d;
-    double pepe = 20 + 20.4;
-    int sum = suma(a, b, c, d);
+    int a = 0;
+
+    return a;
+
 }
