@@ -62,7 +62,7 @@ map<string, string> families = {
     {"VA", R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+)\s*;)"},        // asignación de variables
     {"R", R"(^\s*return\s+([^;]+)\s*;)"},
     {"CALL", R"(^\s*(\b\w+\s+\w+\s*=\s*)?\b\w+\s*\([^;]*\)\s*;)"},
-    {"V", R"(^(int|double|char)\s*([a-zA-Z_]\w*)\s*(;|=\s*(([a-zA-Z_]\w*)|\d+|\d+.\d+|'[a-zA-Z]')\s*(;|(\s*(\+|-|\*|\\)\s*(([a-zA-Z_]\w*)|\d+|\d+.\d+|'[a-zA-Z]'))+(;))))"}
+    {"V", R"(^\s*(int|float|double|char)\s+([a-zA-Z_][a-zA-Z0-9_]*)(\s*=\s*'([a-zA-Z])'|\s*=\s*[^,;]*)?(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=\s*'([a-zA-Z])'|\s*=\s*[^,;]*)?)*\s*;)"}
 };
 
 //Map que contiene a las funciones, sus tipos de datos y tipo de retorno.
@@ -212,7 +212,7 @@ void CheckNum(vector<pair<string, string>> tokens)
             }
             if(d == "double")
             {
-                if(!regex_match(par.first, match, dType))
+                if(!regex_match(par.first, match, dType) && !regex_match(par.first, match, iType))
                 {
                     cout<<"tipo de valor incorrecto"<<endl;
                     exit(1);
