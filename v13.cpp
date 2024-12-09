@@ -47,7 +47,9 @@ struct Node
 
 //Expresiones regulares para la deteccion de tokens.
 map<string, string> families = {
-    {"D", R"(int|double|char|void)"},                             // tipos de dato
+    {"D", R"(int|double|char|void)"},
+    {"FUNC", R"(^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\))"},
+    {"RETURN", R"(return)"},                             // tipos de dato
     {"N", R"(^[a-zA-Z_][a-zA-Z0-9_]*)"},                                 // nombres
     {"S", R"([\+\-\*/%])"},                                             // simbolo
     {"E", R"(=)"},                                                      // igual
@@ -60,9 +62,9 @@ map<string, string> families = {
     {"FOR", R"(^\s*for\s*\(\s*[^)]*\s*\)\s*\{)"},                       // for
     {"WHILE", R"(^\s*while\s*\(\s*[^)]*\s*\)\s*\{)"},                   // while
     {"VA", R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+)\s*;)"},        // asignación de variables
-    {"R", R"(\s*return\s+([a-zA-Z_]\w*|\d+|'[a-zA-Z]'|\d+\.\d+)\s*;)"},
+    {"R", R"(\s*return\s+(([a-zA-Z_][a-zA-Z0-9_]*|\d+(\.\d+)?|'[a-zA-Z]'|\([^\)]*\))(\s*[\+\-\*\/]\s*([a-zA-Z_][a-zA-Z0-9_]*|\d+(\.\d+)?|'[a-zA-Z]'|\([^\)]*\)))*\s*)\s*;)"},
     {"CALL", R"(^\s*(\b\w+\s+\w+\s*=\s*)?\b\w+\s*\([^;]*\)\s*;)"},
-    {"V", R"(^\s*(int|float|double|char)\s+([a-zA-Z_][a-zA-Z0-9_]*)(\s*=\s*'([a-zA-Z])'|\s*=\s*[^,;]*)?(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=\s*'([a-zA-Z])'|\s*=\s*[^,;]*)?)*\s*;)"}
+    {"V", R"(^\s*(int|float|double|char)\s+([a-zA-Z_][a-zA-Z0-9_]*)(\s*=\s*[^,;]+(\([^)]*\))?[^,;]*)?(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=\s*[^,;]+(\([^)]*\))?[^,;]*)?)*\s*;)"}
 };
 
 //Map que contiene a las funciones, sus tipos de datos y tipo de retorno.
@@ -82,7 +84,8 @@ void CheckReservedWords(string var)
     }
 }
 
-void PrintTokens(const vector<pair<string, string>>& tokens) {
+void PrintTokens(const vector<pair<string, string>>& tokens) 
+{
     for (const auto& token : tokens) {
         cout << "Token: " << token.first << ", Tipo: " << token.second << endl;
     }
@@ -95,85 +98,118 @@ void PrintQueue(queue<string> q)
         cout<<q.front()<<endl;
         q.pop();
     }
-    
+}
+
+bool IsFunctionName(const std::string& palabra) 
+{
+    if (palabra.empty()) return false;
+    for (char c : palabra) {
+        if (!std::isalnum(c) && c != '_') {
+            return false;
+        }
+    }
+    return true;
 }
 
 //Funcion para separar un string en palabras.
-queue<string> SeparateText(string texto)
+queue<string> SeparateText(const std::string& texto) 
 {
-    queue<string> textoSeparado;
-    string palabra = "";
-    bool enComillas = false; 
+    std::queue<std::string> textoSeparado;
+    std::string palabra = "";
+    bool enComillas = false;
+    bool enFuncion = false;  // Para detectar que estamos dentro de una función
+    int parenCount = 0;      // Contador de paréntesis para detectar si estamos dentro de los paréntesis de una función
 
-    //double a = 2.2;
+    for (size_t i = 0; i < texto.size(); ++i) {
+        char c = texto[i];
 
-    for (char c : texto)
-    {
         // Manejo de comillas simples para los caracteres literales
-        if (c == '\'' && !enComillas)
-        {
+        if (c == '\'' && !enComillas && !enFuncion) {
             enComillas = true;
-            palabra += c;  
+            palabra += c;
         }
-        else if (c == '\'' && enComillas)  
-        {
+        else if (c == '\'' && enComillas && !enFuncion) {
             enComillas = false;
-            palabra += c;  
-            textoSeparado.push(palabra);  
-            palabra = "";  
+            palabra += c;
+            textoSeparado.push(palabra);
+            palabra = "";
         }
-        // Manejo de espacios
-        else if (isspace(c)) 
-        {
-            if (!palabra.empty())
-            {
-                textoSeparado.push(palabra);
-                palabra = "";
+        // Manejo de paréntesis que pueden indicar el inicio de una función
+        else if (c == '(' && !enComillas) {
+            if (IsFunctionName(palabra)) {
+                enFuncion = true;
+                parenCount = 1;
+                palabra += c;
             }
-        }
-        // Manejo de puntuación, excepto el guion bajo
-        else if (ispunct(c) && c != '_' && c != '.')  
-        {
-            if (!palabra.empty())
-            {
-                textoSeparado.push(palabra);
-                palabra = "";
-            }
-            textoSeparado.push(string(1, c));  // Se agrega el símbolo como un token
-        }
-        // Manejo de números
-        else if (isdigit(c))  
-        {
-            palabra += c;  // Continuamos construyendo el número, ya sea entero o flotante
-        }
-        // Manejo de puntos decimales en un número flotante
-        else if (c == '.')
-        {
-            // Si estamos en un número, seguimos construyéndolo con el punto
-            if (!palabra.empty()) 
-            {
-                palabra += c;  // Agregamos el punto al número (ej. 2.2)
-            }
-            else
-            {
-                // Si el punto no está en medio de un número, lo tratamos como un símbolo
+            else {
                 if (!palabra.empty()) {
                     textoSeparado.push(palabra);
                     palabra = "";
                 }
-                textoSeparado.push(string(1, c));  // El punto como un token separado
+                textoSeparado.push(std::string(1, c));
+            }
+        }
+        // Si estamos dentro de una función, seguimos acumulando hasta el paréntesis de cierre
+        else if (enFuncion) {
+            palabra += c;
+
+            // Actualizamos el contador de paréntesis
+            if (c == '(') {
+                parenCount++;
+            }
+            else if (c == ')') {
+                parenCount--;
+            }
+
+            // Si el contador de paréntesis llega a 0, terminamos la función
+            if (parenCount == 0) {
+                textoSeparado.push(palabra);
+                palabra = "";
+                enFuncion = false;
+            }
+        }
+        // Manejo de espacios
+        else if (std::isspace(c)) {
+            if (!palabra.empty()) {
+                textoSeparado.push(palabra);
+                palabra = "";
+            }
+        }
+        // Manejo de puntuación, excepto el guion bajo y el punto
+        else if (std::ispunct(c) && c != '_' && c != '.') {
+            if (!palabra.empty()) {
+                textoSeparado.push(palabra);
+                palabra = "";
+            }
+            textoSeparado.push(std::string(1, c));
+        }
+        // Manejo de números
+        else if (std::isdigit(c)) {
+            palabra += c;
+        }
+        // Manejo de puntos decimales en un número flotante
+        else if (c == '.') {
+            if (!palabra.empty() && std::isdigit(palabra.back())) {
+                palabra += c;
+            }
+            else {
+                if (!palabra.empty()) {
+                    textoSeparado.push(palabra);
+                    palabra = "";
+                }
+                textoSeparado.push(std::string(1, c));
             }
         }
         // Si es otro tipo de carácter, lo agregamos directamente a la palabra
-        else
-        {
-            palabra += c;  
+        else {
+            palabra += c;
         }
     }
 
-    // Si se quedó alguna palabra pendiente, la agregamos al final
-    if (!palabra.empty())  
+    // Si quedó alguna palabra pendiente, la agregamos al final
+    if (!palabra.empty()) {
         textoSeparado.push(palabra);
+    }
 
     PrintQueue(textoSeparado);
     return textoSeparado;
@@ -181,7 +217,6 @@ queue<string> SeparateText(string texto)
 
 void CheckNum(vector<pair<string, string>> tokens)
 {
-    cout<<"sientra"<<endl;;
     string d = "";
     for (const auto& par : tokens)
     {
@@ -196,7 +231,6 @@ void CheckNum(vector<pair<string, string>> tokens)
     regex cType(R"(^('[a-zA-Z]'))");
     smatch match;
 
-    cout<<"d vale: "<<d<<endl;
 
     for (const auto& par : tokens)
     {
@@ -230,6 +264,25 @@ void CheckNum(vector<pair<string, string>> tokens)
             }
         }
     }
+}
+
+string SelectNumFamily(string num)
+{
+    string type = "";
+
+    regex iType(R"((^\d+))");
+    regex dType(R"(^(\d+(\.\d+)))");
+    regex cType(R"(^('[a-zA-Z]'))");
+    smatch match;
+
+    if(regex_match(num, match, iType))
+        type = "int";
+    else if(regex_match(num, match, dType))
+        type = "double";
+    else if(regex_match(num, match, cType))
+        type = "char";
+
+    return type;
 }
 
 //Funcion para detectar los tokens de cada palabra y almacenarlo en un map con el token y el valor.
@@ -280,6 +333,25 @@ void CheckVariables(unordered_map<string, pair<string, int>> variables, string v
     } 
 }
 
+void FunctionExists(string name) {
+    // Imprimir todo el mapa de funciones
+    cout << "Funciones registradas:" << endl;
+    for (const auto& entry : functions) {
+        cout << "Funcion: " << entry.first  // Nombre de la función (clave)
+             << ", Tipo: " << entry.second.first  // Tipo de la función (primer valor del pair)
+             << ", Numero de parametros: " << entry.second.second  // Número de parámetros (segundo valor del pair)
+             << endl;
+    }
+
+    // Buscar la función en el mapa
+    auto it = functions.find(name);
+    if (it == functions.end()) {
+        cout << "La funcion " << name << " no ha sido declarada" << endl;
+        exit(1);  // Termina el programa si no existe la función
+    } else {
+        cout << "La funcion " << name << " ha sido declarada" << endl;
+    }
+}
 //Obtener el tipo de variable.
 string GetVarType(unordered_map<string, pair<string, int>> variables, string var)
 {
@@ -341,6 +413,18 @@ void ValidateFor(const string& condition)
     }
 }
 
+void ValidateFunctionsParenthesis(const string& condition)
+{
+    regex validP(R"(^\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*|\d+(\.\d+)?|'.')\s*(\s*,\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*|\d+(\.\d+)?|'.')\s*)*$|^\s*$)");
+    smatch match;
+    
+    if(!regex_match(condition, match, validP))
+    {
+        cout<<"parantesis invalido en la funcion"<<endl;
+        exit(1);
+    }
+}
+
 //Separar el codigo en funciones. Guardar las variables globales al nodo root.
 void CreateASTTree(Node &root, string &code) 
 {
@@ -395,13 +479,17 @@ void CreateASTTree(Node &root, string &code)
             if (match.position() == 0)  
             {
                 tokens = SetTokens(match.str());
-                AddGlobalFunctions(tokens[1].first, tokens[0].first);  
-                auto functionNode = make_unique<Node>("function", "", root.variables, tokens[1].first);
+                string functionName = tokens[1].first; 
+                size_t parenPos = functionName.find('(');
+                functionName = functionName.substr(0, parenPos);
+                AddGlobalFunctions(functionName, tokens[0].first);  
+                cout<<"nombre de la funcion a agregar: "<<tokens[1].first<<endl;
+                auto functionNode = make_unique<Node>("function", "", root.variables, functionName);
 
                 //revisar parametros de la funcion
-                string functionSignature = match.str();
-                size_t startParams = functionSignature.find('(');
-                size_t endParams = functionSignature.find(')');
+                string functionSignature = tokens[1].first;
+                size_t startParams = tokens[1].first.find('(');
+                size_t endParams = tokens[1].first.find(')');
                 
                 if (startParams != string::npos && endParams != string::npos && startParams < endParams)
                 {
@@ -649,16 +737,94 @@ void CheckNode(Node &nodo, Node &root)
             string asignationDataType = "";
             if (match.position() == 0)
             {
-                string tipo = "";
                 tokens = SetTokens(match.str());
+                string tipo = tokens[0].first;
+                cout<<"tipo es: "<<tipo<<endl;
                 CheckNum(tokens);
                 PrintTokens(tokens);
                 string anterior = "";
                 string actual = "";
 
                 bool declaration = false;
+
                 for (const auto& par : tokens) 
                 {
+                    //primero encontrar todos los que sean funciones
+                    if(par.second == "FUNC")
+                    {
+                        size_t startParams2 = par.first.find('(');
+                        string functionName = par.first.substr(0, startParams2);
+
+                        // Ver si la función existe
+                        FunctionExists(functionName);
+                        //obtener el tipo de la funcion y comparar si es el mismo tipo de la declaracion.
+                        string funcType = GetFunctionType(functionName);
+                        if(funcType != tipo)
+                        {
+                            cout<<"La funcion: "<<functionName<<" no es del mismo tipo de la declaracion de variables"<<endl;
+                            exit(1);
+                        }   
+                        //comprobar si los parentesis de la funcion son correctos en sintaxis
+                        size_t startParams = par.first.find('(');
+                        size_t endParams = par.first.find(')');
+                        string parameters = par.first.substr(startParams + 1, endParams - startParams - 1);
+                        ValidateFunctionsParenthesis(parameters);
+                        //hacer un bucle recorriendo los parentesis de la funcion y cada que se encuentre a una variable revisar, si la variable ya fue declarada, obtener su tipo y luego comparar si es el mismo que el de la asignacion ya que la funcion es el mismo tipo que la asignacion
+                        vector<pair<string, string>> tempTokens = SetTokens(parameters);
+                        vector<string> localVarTypes;
+                        for(const auto& var : tempTokens)
+                        {
+                            if(var.second == "N")
+                            {
+                                cout<<"si entra"<<endl;
+                                //revisar si la variable existe
+                                CheckVariables(nodo.variables, var.first);
+                               //si es nombre obtener su tipo de dato y guardarlo en la queue
+                               localVarTypes.push_back(GetVarType(nodo.variables, var.first));
+                               cout<<GetVarType(nodo.variables, var.first)<<endl;
+                            }
+                            if(var.second == "NUM")
+                            {
+                                //si es numero convertirlo a tipo y guardarlo en la queue
+                                string n = SelectNumFamily(var.first);
+                                localVarTypes.push_back(n);
+                            }
+                        }
+
+                        Node *functionNode = nullptr;
+                        for (const auto &child : root.hijos)
+                        {
+                            if (child->nombreDeFuncion == functionName)
+                            {
+                                functionNode = child.get();
+                                break;
+                            }
+                        }
+
+                        if (localVarTypes.size() != functionNode->tiposDeParametos.size())
+                        {
+                            cout << "Cantidad incorrecta de parametros introducidos en la funcion: " << functionName << endl;
+                            cout<<localVarTypes.size()<<" y "<<functionNode->tiposDeParametos.size()<<endl;
+                            exit(1);
+                        }
+
+                        for (int i = 0; i < localVarTypes.size(); i++)
+                        {
+                            if (localVarTypes[i] != (functionNode->tiposDeParametos)[i])
+                            {
+                                cout<<localVarTypes[i]<<endl;
+                                cout<<(functionNode->tiposDeParametos)[i];
+                                cout << "Tipo de dato incorrecto en el parametro " << i + 1 << " de la funcion '" << functionName << "'." << endl;
+                                exit(1);
+                            }
+                        }
+
+                    }
+                }
+                
+                for (const auto& par : tokens) 
+                {
+                    
                     if(declaration && par.second == "D")
                     {
                         cout<<"Variable mal declara (doble tipo de dato)"<<endl;
@@ -747,16 +913,50 @@ void CheckNode(Node &nodo, Node &root)
         {
             if (match.position() == 0)
             {
-                string returnVar = match[1];
-                //get the var type
-                string varType = GetVarType(nodo.variables, returnVar);
-                //get the function type
+                //pueden ser return hola; o return 20; o return a + b + c + 20;
+                
+                //obtener el tipo de la funcion
+                //pasar todo el return a tokens despues de la palabra return
+                //si es una variable comprobar que sea el mismo tipo, si es un numero comprobar que pertenezca al mismo tipo de la funcion y si alguno deja de ser valido terminar el bucle con un bool isValid = false y ya 
+
+                bool isValidReturn = true;
                 string funcType = GetFunctionType(nodo.nombreDeFuncion);
-                //comparar si son iguales
-                if(varType != funcType)
+
+                size_t startParams = match.str().find("return");
+                size_t endParams = match.str().find(';');
+                string parameters = match.str().substr(startParams + 6, endParams - startParams - 1);
+                tokens = SetTokens(parameters);
+                PrintTokens(tokens);
+
+
+                for (const auto &paramToken : tokens)
                 {
-                    cout<<"Valor del return "<<returnVar<<" es invalido"<<endl;
-                    exit(1);
+                    string aux = "vacio";
+                    if (paramToken.second == "N")
+                    {
+                        CheckVariables(nodo.variables, paramToken.first);
+                        aux = GetVarType(nodo.variables, paramToken.first);
+                        if(aux != funcType)
+                        {
+                            cout<<"valor de aux: "<<aux<<endl;
+                            cout<<"valor de func type: "<<funcType<<endl;
+                            cout<<funcType<<endl;
+                            cout<<"Tipo incorrecto en return con: " << paramToken.first<<endl;
+                            exit(1);
+                        }
+                    }
+                    if (paramToken.second == "NUM")
+                    {
+                        aux = SelectNumFamily(paramToken.first);
+                        cout<<"numero y tipo: "<<paramToken.first<<", "<<aux<<endl;
+                        if(aux != funcType)
+                        {
+                            cout<<"valor de aux: "<<aux<<endl;
+                            cout<<funcType<<endl;
+                            cout<<"Tipo incorrecto en return con: " << paramToken.first<<endl;
+                            exit(1);
+                        }
+                    }
                 }
                 code = match.suffix().str();
                 matched = true;
@@ -770,28 +970,14 @@ void CheckNode(Node &nodo, Node &root)
             if (match.position() == 0)
             {
                 tokens = SetTokens(match.str());
-
-                string functionName;
+                string functionName = tokens[0].first; 
+                size_t parenPos = functionName.find('(');
+                functionName = functionName.substr(0, parenPos);
+                //
                 string varType;
                 bool isAssignment = false;
+                cout<<"El nombre es: "<<functionName<<endl;
 
-                if (tokens[0].second == "N") // tipo 1: Func(a, b);
-                {
-                    functionName = tokens[0].first;
-                }
-                else if (tokens[3].second == "N") // tipo 2: int var = Func(a, b);
-                {
-                    functionName = tokens[3].first;
-                    varType = tokens[0].first;
-                    isAssignment = true;
-                }
-                else
-                {
-                    cout << "Error en la llamada a la funcion." << endl;
-                    exit(1);
-                }
-
-                
 
                 Node *functionNode = nullptr;
                 for (const auto &child : root.hijos)
@@ -816,9 +1002,11 @@ void CheckNode(Node &nodo, Node &root)
                     exit(1);
                 }
 
-                size_t startParams = match.str().find('(');
-                size_t endParams = match.str().find(')');
-                string parameters = match.str().substr(startParams + 1, endParams - startParams - 1);
+                size_t startParams = tokens[0].first.find('(');
+                size_t endParams = tokens[0].first.find(')');
+                string parameters = tokens[0].first.substr(startParams + 1, endParams - startParams - 1);
+                ValidateFunctionsParenthesis(parameters);
+                cout<<"los param: "<<parameters<<endl;
                 vector<pair<string, string>> paramParsedTokens = SetTokens(parameters);
 
                 vector<string> localVarTypes;
@@ -826,8 +1014,13 @@ void CheckNode(Node &nodo, Node &root)
                 {
                     if (paramToken.second == "N")
                     {
+                        cout<<"variable a revisar: "<<paramToken.first<<endl;
                         CheckVariables(nodo.variables, paramToken.first); // Verificar si la variable existe
                         localVarTypes.push_back(GetVarType(nodo.variables, paramToken.first)); // Obtener el tipo
+                    }
+                    if(paramToken.second == "NUM")
+                    {
+                        localVarTypes.push_back(SelectNumFamily(paramToken.first));
                     }
                 }
 
@@ -879,7 +1072,8 @@ void CheckNode(Node &nodo, Node &root)
 }
 
 //Imprimir un map y sus valores.
-void PrintMap(const unordered_map<string, pair<string, int>>& map) {
+void PrintMap(const unordered_map<string, pair<string, int>>& map) 
+{
     for (const auto& pair : map) {
         cout << "Hash: " << pair.first 
              << ", Tipo: " << pair.second.first 
@@ -889,7 +1083,8 @@ void PrintMap(const unordered_map<string, pair<string, int>>& map) {
 }
 
 //Imprimir la informacion de los nodos
-void PrintChildren(const Node& root) {
+void PrintChildren(const Node& root) 
+{
     cout << "Hijos del nodo " << root.familia << ":" << endl;
 
     // Iterar sobre cada hijo del nodo
@@ -904,7 +1099,8 @@ void PrintChildren(const Node& root) {
 }
 
 //Inicializar el nodo root vacio. 
-unique_ptr<Node> InitiTree() {
+unique_ptr<Node> InitiTree() 
+{
     return make_unique<Node>("root", "", unordered_map<string, pair<string, int>>(), "");
 }
 
