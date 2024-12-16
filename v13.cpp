@@ -13,6 +13,18 @@ Cambios:
 
 6. actualizacion de familia de v para detectar 'c' y 2.2 (char y decimal)
 
+
+
+casos a probar:
+1. declaracion de funciones void y llamarlas asignandolas a una variable (debe marcar error)
+2. declaracion de funciones distintas a void y llamarlas sin asignar (debe marcar error)
+3. declaracion de una funcion con n argumentos, pasandole x argumentos donde x != n (debe marcar error)
+4. declaracion y asignacion de funciones con operaciones aritmeticas que incluyan variables y numeros
+5. llamado a funciones pasandole argumentos de tipo numerico y de tipo variable
+6. usar un return en una funcion de tipo void 
+7. poner una funcion distinta de void sin un return
+8. declarar una variable dentro de la llamada a una funcion (como argumento)
+
 */
 
 #include <iostream>
@@ -579,6 +591,74 @@ void CreateASTTree(Node &root, string &code)
     }
 }
 
+void ValidateFunctions(string func, string tipo, Node &nodo, Node &root)
+{
+    size_t startParams2 = func.find('(');
+    string funcName = func.substr(0, startParams2);
+    string funcType = GetFunctionType(funcName);
+    FunctionExists(funcName);
+
+    if(funcType != tipo)
+    {
+        cout<<"La funcion: "<<funcName<<" no es del mismo tipo de la declaracion de variables"<<endl;
+        exit(1);
+    }   
+
+    size_t startParams = func.find('(');
+    size_t endParams = func.find(')');
+    string parameters = func.substr(startParams + 1, endParams - startParams - 1);
+
+    cout<<"cosa a validar: "<<parameters<<endl;
+    ValidateFunctionsParenthesis(parameters);
+
+    vector<pair<string, string>> tempTokens = SetTokens(parameters);
+    vector<string> localVarTypes;
+
+    for(const auto& var : tempTokens)
+    {
+        if(var.second == "N")
+        {
+            CheckVariables(nodo.variables, var.first);
+            localVarTypes.push_back(GetVarType(nodo.variables, var.first));
+        }
+        if(var.second == "NUM")
+        {
+            string n = SelectNumFamily(var.first);
+            localVarTypes.push_back(n);
+        }
+    }
+
+    Node *functionNode = nullptr;
+
+    for(const auto &child : root.hijos)
+    {
+        if(child->nombreDeFuncion == funcName)
+        {
+            functionNode = child.get();
+            break;
+        }
+    }
+
+    if (localVarTypes.size() != functionNode->tiposDeParametos.size())
+    {
+        cout << "Cantidad incorrecta de parametros introducidos en la funcion: " << funcName << endl;
+        cout<<localVarTypes.size()<<" y "<<functionNode->tiposDeParametos.size()<<endl;
+        exit(1);
+    }
+
+    for (int i = 0; i < localVarTypes.size(); i++)
+    {
+        if (localVarTypes[i] != (functionNode->tiposDeParametos)[i])
+        {
+            cout<<localVarTypes[i]<<endl;
+            cout<<(functionNode->tiposDeParametos)[i];
+            cout << "Tipo de dato incorrecto en el parametro " << i + 1 << " de la funcion '" << funcName << "'." << endl;
+            exit(1);
+        }
+    }
+
+}
+
 //Revisar recurisvamente las funciones para encontrar bucles, condicionales y declaraciones de variables.
 void CheckNode(Node &nodo, Node &root)
 {
@@ -752,6 +832,7 @@ void CheckNode(Node &nodo, Node &root)
                     //primero encontrar todos los que sean funciones
                     if(par.second == "FUNC")
                     {
+                        /*
                         size_t startParams2 = par.first.find('(');
                         string functionName = par.first.substr(0, startParams2);
 
@@ -818,6 +899,8 @@ void CheckNode(Node &nodo, Node &root)
                                 exit(1);
                             }
                         }
+                        */
+                        ValidateFunctions(par.first, tipo, nodo, root);
 
                     }
                 }
@@ -875,9 +958,15 @@ void CheckNode(Node &nodo, Node &root)
             {
                 string asignationDataType = "";
                 tokens = SetTokens(match.str());
+                string tipo = GetVarType(nodo.variables, tokens[0].first); //obtener el tipo para usar la funcion de funciones jeje
                 CheckNum(tokens);
                 for (const auto& par : tokens) 
                 {
+                    if(par.second == "FUNC")
+                    {
+                        ValidateFunctions(par.first, tipo, nodo, root);
+                    }
+
                     if(par.second == "D")
                     {
                         cout<<"Error en la asignacion de valores (doble tipo de dato)"<<endl;
